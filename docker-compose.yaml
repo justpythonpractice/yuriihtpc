@@ -1,0 +1,316 @@
+version: '2'
+
+services:
+    organizr:
+        container_name: organizr
+        hostname: organizr
+        image: organizr/organizr
+        restart: unless-stopped
+        ports:
+                - 80:80
+        volumes:
+                - /home/organizr:/config
+        environment:
+                - fpm=true #true or false | using true will provide better performance
+                - branch=v2-master #v2-master or #v2-develop
+                - PUID=1000
+                - PGID=1000
+                - TZ=${TZ}
+    # ----------------------------------------
+    # PLEX
+    # Robust Media Server
+    # ----------------------------------------
+    plex:
+        container_name: plex
+        image: plexinc/pms-docker:latest
+        restart: unless-stopped
+        network_mode: 'host'
+        ports:
+            - '${IP_ADDRESS}:32400:32400/tcp'
+            - '${IP_ADDRESS}:3005:3005/tcp'
+            - '${IP_ADDRESS}:8324:8324/tcp'
+            - '${IP_ADDRESS}:32469:32469/tcp'
+            - '${IP_ADDRESS}:1900:1900/udp'
+            - '${IP_ADDRESS}:32410:32410/udp'
+            - '${IP_ADDRESS}:32412:32412/udp'
+            - '${IP_ADDRESS}:32413:32413/udp'
+            - '${IP_ADDRESS}:32414:32414/udp'
+        environment:
+            - PLEX_CLAIM=${PMSTOKEN}
+            - ADVERTISE_IP=http://${IP_ADDRESS}:32400/
+            - ALLOWED_NETWORKS=${CIDR_ADDRESS}
+            - PLEX_UID=${PUID}
+            - PLEX_GID=${PGID}
+        hostname: ${HOSTNAME}
+        volumes:
+            - '${USERDIR}/docker/plex:/config'
+            - '${USERDIR}/docker/plex/transcode:/transcode'
+            - '${MEDIA_DIR}/movies:/movies'
+            - '${MEDIA_DIR}/TV:/tv'
+            - '/etc/localtime:/etc/localtime:ro'
+
+
+    # ----------------------------------------
+    # TAUTULLI
+    # Monitoring Service for PLEX Usage
+    # ----------------------------------------
+    tautulli:
+        container_name: tautulli
+        restart: unless-stopped
+        image: linuxserver/tautulli
+        network_mode: 'bridge'
+        ports:
+            - '${IP_ADDRESS}:8181:8181'
+        volumes:
+            - '${USERDIR}/docker/tautulli/config:/config'
+            - '${USERDIR}/docker//plex/Library/Application Support/Plex Media Server/Logs:/logs:ro'
+            - '${USERDIR}/docker/shared:/shared'
+        environment:
+            - PUID=${PUID}
+            - PGID=${PGID}
+            - TZ=${TZ}
+        depends_on:
+            - plex
+
+
+    # ----------------------------------------
+    # OMBI
+    # Request Service for Plex Content
+    # ----------------------------------------
+    ombi:
+        container_name: ombi
+        image: linuxserver/ombi
+        restart: unless-stopped
+        network_mode: 'bridge'
+        ports:
+            - '${IP_ADDRESS}:3579:3579'
+        volumes:
+            - '${USERDIR}/docker/ombi:/config'
+            - '${USERDIR}/docker/shared:/shared'
+        environment:
+            - PUID=${PUID}
+            - PGID=${PGID}
+            - TZ=${TZ}
+            - VIRTUAL_HOST=request.${DOMAIN}
+            - LETSENCRYPT_HOST=request.${DOMAIN}
+            - LETSENCRYPT_EMAIL=${EMAIL}
+
+    # ----------------------------------------
+    # TV Series Management
+    # ----------------------------------------
+    sonarr:
+        image: linuxserver/sonarr
+        container_name: sonarr
+        restart: unless-stopped
+        network_mode: 'bridge'
+        ports:
+            - '${IP_ADDRESS}:8989:8989'
+        environment:
+            - PUID=${PUID}
+            - PGID=${PGID}
+        volumes:
+            - '${USERDIR}/docker/sonarr:/config'
+            - '${MEDIA_DIR}/completed:/completed'
+            - '${MEDIA_DIR}/downloads:/downloads'
+            - '${MEDIA_DIR}/unprocessed:/unprocessed'
+            - '${MEDIA_DIR}/watch:/watch'
+            - '${MEDIA_DIR}/TV:/tv'
+            - '/etc/localtime:/etc/localtime:ro'
+
+    # ----------------------------------------
+    # RADARR
+    # Movie Management
+    # ----------------------------------------
+    radarr:
+        image: linuxserver/radarr
+        container_name: radarr
+        restart: unless-stopped
+        network_mode: 'bridge'
+        ports:
+            - '${IP_ADDRESS}:7878:7878'
+        environment:
+            - PUID=${PUID}
+            - PGID=${PGID}
+        volumes:
+            - '${USERDIR}/docker/radarr:/config'
+            - '${MEDIA_DIR}/completed:/completed'
+            - '${MEDIA_DIR}/downloads:/downloads'
+            - '${MEDIA_DIR}/unprocessed:/unprocessed'
+            - '${MEDIA_DIR}/movies:/movies:rw'
+            - '/etc/localtime:/etc/localtime:ro'
+
+    # ----------------------------------------
+    # BAZARR
+    # Subtitle Management
+    # ----------------------------------------
+    bazarr:
+        image: linuxserver/bazarr
+        container_name: bazarr
+        restart: unless-stopped
+        network_mode: 'bridge'
+        ports:
+           - '${IP_ADDRESS}:6767:6767'
+        environment:
+            - PUID=${PUID}
+            - PGID=${PGID}
+            - TZ=${TZ}
+        volumes:
+            - '${USERDIR}/docker/bazarr:/config'
+            - '${MEDIA_DIR}/movies:/movies:rw'
+            - '${MEDIA_DIR}/watch:/watch:rw'
+            - '${MEDIA_DIR}/TV:/tv:rw'
+            - '/etc/localtime:/etc/localtime:ro'
+    # ----------------------------------------
+    # JACKETT
+    # Indexer APIs
+    # ----------------------------------------
+    jackett:
+        image: linuxserver/jackett
+        container_name: jackett
+        restart: unless-stopped
+        network_mode: 'bridge'
+        ports:
+           - '${IP_ADDRESS}:9117:9117'
+        environment:
+            - PUID=${PUID}
+            - PGID=${PGID}
+            - TZ=${TZ}
+        volumes:
+            - '${USERDIR}/docker/jackett:/config'
+            - '${MEDIA_DIR}/downloads:/downloads'
+
+    # ------------------------------------------
+    # DELUGE
+    # A lightweight BitTorrent client
+    # ------------------------------------------
+    deluge:
+        image: "linuxserver/deluge"
+        container_name: "deluge"
+        network_mode: 'bridge'
+        volumes:
+            - '${USERDIR}/docker/deluge:/config'
+            - '${MEDIA_DIR}/downloads:/downloads:rw'
+            - '${MEDIA_DIR}/TV:/tv:rw'
+            - '${MEDIA_DIR}/completed:/completed:rw'
+            - '${MEDIA_DIR}/watch:/watch:rw'
+            - '/etc/localtime:/etc/localtime:ro'
+        ports:
+            - '${IP_ADDRESS}:8112:8112'
+            - '${IP_ADDRESS}:8118:8118'
+            - '${IP_ADDRESS}:58846:58846'
+            - '${IP_ADDRESS}:58946:58946'
+        restart: unless-stopped
+        environment:
+            - PUID=${PUID}
+            - PGID=${PGID}
+            - TZ=${TZ}
+            - LAN_NETWORK=${CIDR_ADDRESS}
+
+
+
+
+
+# ----------------------------------------------------
+# Management Section
+# ----------------------------------------------------
+    # ----------------------------------------
+    # NETDATA
+    # System Resource Monitoring Service
+    # ----------------------------------------
+    netdata:
+        image: titpetric/netdata
+        container_name: netdata
+        restart: unless-stopped
+        network_mode: 'bridge'
+        ports:
+            - '${IP_ADDRESS}:19999:19999'
+        environment:
+            - PUID=${PUID}
+            - PGID=${PGID}
+            - VIRTUAL_HOST=netdata.${DOMAIN}
+            - LETSENCRYPT_HOST=netdata.${DOMAIN}
+            - LETSENCRYPT_EMAIL=${EMAIL}
+        cap_add:
+            - SYS_PTRACE
+        volumes:
+            - '/proc:/host/proc:ro'
+            - '/sys:/host/sys:ro'
+            - '/etc/localtime:/etc/localtime:ro'
+            - '/var/run/docker.sock:/var/run/docker.sock'
+
+    # ----------------------------------------
+    # DUPLICATI
+    # Backup Software
+    # ----------------------------------------
+    duplicati:
+        image: linuxserver/duplicati
+        container_name: duplicati
+        restart: unless-stopped
+        network_mode: 'bridge'
+        ports:
+            - '${IP_ADDRESS}:8089:80'
+        environment:
+            - PUID=${PUID}
+            - PGID=${PGID}
+        volumes:
+            - '${USERDIR}/docker/duplicati:/config'
+            - '${MEDIA_DIR}:/media'
+            - '/etc/localtime:/etc/localtime:ro'
+
+    # ----------------------------------------
+    # InfluxDB
+    # Time Series Database for Speedtest
+    # ----------------------------------------
+    influxdb:
+        image: influxdb
+        container_name: influxdb
+        restart: unless-stopped
+        network_mode: 'bridge'
+        ports:
+            - '${IP_ADDRESS}:8086:8086'
+        environment:
+            - INFLUXDB_DB=speedtest
+        volumes:
+            - '${USERDIR}/docker/influxdb:/var/lib/influxdb'
+
+    # ----------------------------------------
+    # Chronograf
+    # Dashboard Tool for Speedtest
+    # ----------------------------------------
+    chronograf:
+        image: chronograf
+        container_name: chronograf
+        restart: unless-stopped
+        network_mode: 'bridge'
+        ports:
+            - '${IP_ADDRESS}:8888:8888'
+        environment:
+            - INFLUXDB_URL=http://db:8086
+        volumes:
+            - './chronograf:/var/lib/chronograf'
+        links:
+            - influxdb:db
+        depends_on:
+            - influxdb
+
+    # ----------------------------------------
+    # Speedtest
+    # Speedtest-CLI and Post to InfluxDB
+    # ----------------------------------------
+    speedtest:
+        image: phikai/speedtest
+        container_name: speedtest
+        restart: unless-stopped
+        network_mode: 'bridge'
+        environment:
+            - TEST_INTERVAL=${SPEEDTEST_INTERVAL}
+        links:
+            - influxdb:db
+        depends_on:
+            - influxdb
+
+networks:
+  default:
+    driver: bridge
+volumes:
+  proxy:
